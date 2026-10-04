@@ -64,7 +64,7 @@ services:
 
 
   # ==========================================================
-  # MinIO Community - Object Storage S3
+  # MinIO
   # ==========================================================
   minio:
     image: ghcr.io/coollabsio/minio:RELEASE.2025-04-22T22-12-26Z
@@ -87,6 +87,33 @@ services:
 
 
   # ==========================================================
+  # PostgreSQL + TimescaleDB
+  # ==========================================================
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: industrypulse-timescaledb
+
+    ports:
+      - "5432:5432"
+
+    environment:
+      POSTGRES_DB: industrypulse
+      POSTGRES_USER: industrypulse
+      POSTGRES_PASSWORD: industrypulse123
+
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U industrypulse -d industrypulse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    restart: unless-stopped
+
+
+  # ==========================================================
   # Apache Spark
   # ==========================================================
   spark:
@@ -96,6 +123,7 @@ services:
     depends_on:
       - kafka
       - minio
+      - timescaledb
 
     volumes:
       - ./src:/app/src
@@ -112,9 +140,35 @@ services:
     restart: unless-stopped
 
 
+  # ==========================================================
+  # Grafana
+  # ==========================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: industrypulse-grafana
+
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
+    ports:
+      - "3001:3000"
+
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: industrypulse123
+
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+    restart: unless-stopped
+
+
 # ============================================================
 # VOLUMES
 # ============================================================
 volumes:
   kafka_data:
   minio_data:
+  timescaledb_data:
+  grafana_data:
