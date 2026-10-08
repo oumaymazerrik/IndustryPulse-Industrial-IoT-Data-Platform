@@ -1,3 +1,6 @@
+
+name: industrypulse
+
 services:
 
   # ==========================================================
@@ -64,7 +67,7 @@ services:
 
 
   # ==========================================================
-  # MinIO
+  # MinIO - Iceberg Lakehouse Storage
   # ==========================================================
   minio:
     image: ghcr.io/coollabsio/minio:RELEASE.2025-04-22T22-12-26Z
@@ -87,7 +90,7 @@ services:
 
 
   # ==========================================================
-  # PostgreSQL + TimescaleDB
+  # PostgreSQL + TimescaleDB - Serving Layer
   # ==========================================================
   timescaledb:
     image: timescale/timescaledb:latest-pg16
@@ -141,7 +144,7 @@ services:
 
 
   # ==========================================================
-  # Grafana
+  # Grafana - Real-Time Monitoring
   # ==========================================================
   grafana:
     image: grafana/grafana:latest
@@ -164,6 +167,141 @@ services:
     restart: unless-stopped
 
 
+  # ==========================================================
+  # PostgreSQL - Airflow Metadata Database
+  # ==========================================================
+  airflow-db:
+    image: postgres:16
+    container_name: industrypulse-airflow-db
+
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow123
+      POSTGRES_DB: airflow
+
+    volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    restart: unless-stopped
+
+
+  # ==========================================================
+  # Airflow Common Configuration
+  # ==========================================================
+  airflow-init:
+    image: apache/airflow:3.1.0
+    container_name: industrypulse-airflow-init
+
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+
+    environment: &airflow_environment
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow123@airflow-db:5432/airflow
+
+      AIRFLOW__CORE__FERNET_KEY: ""
+
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+
+      AIRFLOW__API_AUTH__JWT_SECRET: "industrypulse-local-dev-jwt-secret-change-before-deployment"
+
+      AIRFLOW__API__BASE_URL: http://localhost:8080
+
+    volumes: &airflow_volumes
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+
+    command: >
+      bash -c "airflow db migrate"
+
+    restart: "no"
+
+
+  # ==========================================================
+  # Airflow API Server - Web Interface
+  # ==========================================================
+  airflow-apiserver:
+    image: apache/airflow:3.1.0
+    container_name: industrypulse-airflow-apiserver
+
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+    environment:
+      <<: *airflow_environment
+
+    volumes: *airflow_volumes
+
+    command: api-server
+
+    ports:
+      - "8080:8080"
+
+    restart: unless-stopped
+
+
+  # ==========================================================
+  # Airflow Scheduler + LocalExecutor
+  # ==========================================================
+  airflow-scheduler:
+    image: apache/airflow:3.1.0
+    container_name: industrypulse-airflow-scheduler
+
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-apiserver:
+        condition: service_started
+
+    environment:
+      <<: *airflow_environment
+
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+
+    volumes: *airflow_volumes
+
+    command: scheduler
+
+    restart: unless-stopped
+
+
+  # ==========================================================
+  # Airflow DAG Processor
+  # ==========================================================
+  airflow-dag-processor:
+    image: apache/airflow:3.1.0
+    container_name: industrypulse-airflow-dag-processor
+
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+    environment:
+      <<: *airflow_environment
+
+    volumes: *airflow_volumes
+
+    command: dag-processor
+
+    restart: unless-stopped
+
+
 # ============================================================
 # VOLUMES
 # ============================================================
@@ -172,3 +310,4 @@ volumes:
   minio_data:
   timescaledb_data:
   grafana_data:
+  airflow_postgres_data:
