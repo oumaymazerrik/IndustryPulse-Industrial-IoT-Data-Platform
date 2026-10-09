@@ -1,4 +1,7 @@
+
 import json
+import os
+import time
 
 import paho.mqtt.client as mqtt
 from kafka import KafkaProducer
@@ -8,70 +11,64 @@ from kafka import KafkaProducer
 # CONFIGURATION MQTT
 # ============================================================
 
-MQTT_BROKER = "localhost"
-MQTT_PORT = 1883
-MQTT_TOPIC = "industrypulse/machines"
+MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_TOPIC = os.getenv("MQTT_TOPIC", "industrypulse/machines")
 
 
 # ============================================================
 # CONFIGURATION KAFKA
 # ============================================================
 
-KAFKA_BROKER = "localhost:9092"
-KAFKA_TOPIC = "machine-sensors"
+KAFKA_BROKER = os.getenv("KAFKA_BROKER", "localhost:9092")
+KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "machine-sensors")
 
 
 # ============================================================
 # KAFKA PRODUCER
 # ============================================================
 
-producer = KafkaProducer(
-    bootstrap_servers=KAFKA_BROKER,
+def create_kafka_producer():
+    while True:
+        try:
+            producer = KafkaProducer(
+                bootstrap_servers=KAFKA_BROKER,
+                key_serializer=lambda key: key.encode("utf-8"),
+                value_serializer=lambda value: json.dumps(value).encode("utf-8"),
+                retries=5,
+                acks="all",
+            )
 
-    key_serializer=lambda key: key.encode("utf-8"),
+            print("[OK] Kafka connecté", flush=True)
+            return producer
 
-    value_serializer=lambda value: json.dumps(value).encode("utf-8")
-)
+        except Exception as error:
+            print(f"[WAIT] Kafka indisponible : {error}", flush=True)
+            time.sleep(5)
 
 
 # ============================================================
-# MQTT CALLBACK
+# MQTT CALLBACKS
 # ============================================================
 
 def on_connect(client, userdata, flags, reason_code, properties):
-
     if reason_code == 0:
-
-        print("Connexion MQTT réussie")
-
-        client.subscribe(
-            MQTT_TOPIC,
-            qos=1
-        )
-
-        print(f"Abonné au topic : {MQTT_TOPIC}")
-
+        print("[OK] Connexion MQTT réussie", flush=True)
+        client.subscribe(MQTT_TOPIC, qos=1)
+        print(f"[OK] Abonné à {MQTT_TOPIC}", flush=True)
     else:
-
-        print(f"Erreur MQTT : {reason_code}")
+        print(f"[ERROR] Connexion MQTT : {reason_code}", flush=True)
 
 
 def on_message(client, userdata, message):
-
     try:
-
-        # Message MQTT -> JSON
-        data = json.loads(
-            message.payload.decode("utf-8")
-        )
-
+        data = json.loads(message.payload.decode("utf-8"))
         machine_id = data["machine_id"]
 
-        # JSON -> Kafka
         future = producer.send(
             KAFKA_TOPIC,
             key=machine_id,
-            value=data
+            value=data,
         )
 
         metadata = future.get(timeout=10)
@@ -80,57 +77,46 @@ def on_message(client, userdata, message):
             f"[MQTT -> KAFKA] "
             f"{machine_id} | "
             f"partition={metadata.partition} | "
-            f"offset={metadata.offset}"
+            f"offset={metadata.offset}",
+            flush=True,
         )
 
     except Exception as error:
-
-        print(f"[ERROR] {error}")
-
-
-# ============================================================
-# MQTT CLIENT
-# ============================================================
-
-client = mqtt.Client(
-    mqtt.CallbackAPIVersion.VERSION2,
-    client_id="industrypulse-mqtt-kafka-bridge"
-)
-
-client.on_connect = on_connect
-client.on_message = on_message
+        print(f"[ERROR] {error}", flush=True)
 
 
 # ============================================================
-# START
+# MAIN
 # ============================================================
 
-print("==========================================")
-print(" IndustryPulse - MQTT -> Kafka Bridge")
-print("==========================================")
-print(f"MQTT  : {MQTT_BROKER}:{MQTT_PORT}")
-print(f"Kafka : {KAFKA_BROKER}")
-print(f"Topic : {KAFKA_TOPIC}")
-print("==========================================")
+if __name__ == "__main__":
+    print("==========================================")
+    print(" IndustryPulse - MQTT -> Kafka Bridge")
+    print("==========================================")
+    print(f"MQTT  : {MQTT_BROKER}:{MQTT_PORT}")
+    print(f"Kafka : {KAFKA_BROKER}")
+    print(f"Topic : {KAFKA_TOPIC}")
+    print("==========================================")
 
-client.connect(
-    MQTT_BROKER,
-    MQTT_PORT,
-    60
-)
+    producer = create_kafka_producer()
 
-try:
+    client = mqtt.Client(
+        mqtt.CallbackAPIVersion.VERSION2,
+        client_id="industrypulse-mqtt-kafka-bridge",
+    )
 
-    client.loop_forever()
+    client.on_connect = on_connect
+    client.on_message = on_message
 
-except KeyboardInterrupt:
+    try:
+        client.connect_async(MQTT_BROKER, MQTT_PORT, 60)
+        client.loop_forever(retry_first_connection=True)
 
-    print("\nArrêt du bridge...")
+    except KeyboardInterrupt:
+        print("\nArrêt du bridge...")
 
-finally:
-
-    producer.flush()
-    producer.close()
-    client.disconnect()
-
-    print("Connexions fermées.")
+    finally:
+        producer.flush()
+        producer.close()
+        client.disconnect()
+        print("Connexions fermées.")

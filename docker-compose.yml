@@ -1,11 +1,49 @@
 
 name: industrypulse
 
+# ============================================================
+# AIRFLOW - CONFIGURATION COMMUNE
+# ============================================================
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:3.1.0
+
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:?Set AIRFLOW_DB_PASSWORD in .env}@airflow-db:5432/airflow
+
+    AIRFLOW__CORE__FERNET_KEY: ""
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:?Set AIRFLOW_JWT_SECRET in .env}
+
+    AIRFLOW__API__BASE_URL: http://localhost:8080
+
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+
+    SPARK_RUNNER_TOKEN: ${SPARK_RUNNER_TOKEN:?Set SPARK_RUNNER_TOKEN in .env}
+
+    IOT_DB_NAME: industrypulse
+    IOT_DB_USER: industrypulse
+    IOT_DB_PASSWORD: ${IOT_DB_PASSWORD:?Set IOT_DB_PASSWORD in .env}
+
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+
+
+# ============================================================
+# SERVICES
+# ============================================================
+
 services:
 
   # ==========================================================
-  # MQTT - Eclipse Mosquitto
+  # MQTT - MOSQUITTO
   # ==========================================================
+
   mosquitto:
     image: eclipse-mosquitto:latest
     container_name: industrypulse-mqtt
@@ -22,8 +60,9 @@ services:
 
 
   # ==========================================================
-  # Apache Kafka - KRaft
+  # APACHE KAFKA
   # ==========================================================
+
   kafka:
     image: apache/kafka:3.9.1
     container_name: industrypulse-kafka
@@ -33,31 +72,34 @@ services:
 
     environment:
       KAFKA_NODE_ID: 1
+
       KAFKA_PROCESS_ROLES: broker,controller
 
-      KAFKA_LISTENERS: >
+      KAFKA_LISTENERS: >-
         PLAINTEXT://:29092,
         CONTROLLER://:29093,
         PLAINTEXT_HOST://:9092
 
-      KAFKA_ADVERTISED_LISTENERS: >
+      KAFKA_ADVERTISED_LISTENERS: >-
         PLAINTEXT://kafka:29092,
         PLAINTEXT_HOST://localhost:9092
 
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >-
         CONTROLLER:PLAINTEXT,
         PLAINTEXT:PLAINTEXT,
         PLAINTEXT_HOST:PLAINTEXT
 
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
 
-      KAFKA_CONTROLLER_QUORUM_VOTERS: >
+      KAFKA_CONTROLLER_QUORUM_VOTERS: >-
         1@kafka:29093
 
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
 
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
 
     volumes:
@@ -67,8 +109,9 @@ services:
 
 
   # ==========================================================
-  # MinIO - Iceberg Lakehouse Storage
+  # MINIO - DATA LAKE ICEBERG
   # ==========================================================
+
   minio:
     image: ghcr.io/coollabsio/minio:RELEASE.2025-04-22T22-12-26Z
     container_name: industrypulse-minio
@@ -80,8 +123,9 @@ services:
       - "9001:9001"
 
     environment:
-      MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: industrypulse123
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
+
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
 
     volumes:
       - minio_data:/data
@@ -90,8 +134,9 @@ services:
 
 
   # ==========================================================
-  # PostgreSQL + TimescaleDB - Serving Layer
+  # TIMESCALEDB - POSTGRESQL
   # ==========================================================
+
   timescaledb:
     image: timescale/timescaledb:latest-pg16
     container_name: industrypulse-timescaledb
@@ -101,14 +146,19 @@ services:
 
     environment:
       POSTGRES_DB: industrypulse
+
       POSTGRES_USER: industrypulse
-      POSTGRES_PASSWORD: industrypulse123
+
+      POSTGRES_PASSWORD: ${IOT_DB_PASSWORD:?Set IOT_DB_PASSWORD in .env}
 
     volumes:
       - timescaledb_data:/var/lib/postgresql/data
 
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U industrypulse -d industrypulse"]
+      test:
+        - CMD-SHELL
+        - pg_isready -U industrypulse -d industrypulse
+
       interval: 10s
       timeout: 5s
       retries: 5
@@ -117,10 +167,16 @@ services:
 
 
   # ==========================================================
-  # Apache Spark
+  # APACHE SPARK - CUSTOM IMAGE
   # ==========================================================
+
   spark:
-    image: spark-python:latest
+    build:
+      context: .
+      dockerfile: spark-runner/Dockerfile
+
+    image: industrypulse-spark:local
+
     container_name: industrypulse-spark
 
     depends_on:
@@ -128,24 +184,48 @@ services:
       - minio
       - timescaledb
 
+    environment:
+      SPARK_RUNNER_TOKEN: ${SPARK_RUNNER_TOKEN:?Set SPARK_RUNNER_TOKEN in .env}
+
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
+
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+
+      MINIO_ENDPOINT: http://minio:9000
+
+      IOT_DB_HOST: timescaledb
+      IOT_DB_PORT: "5432"
+      IOT_DB_NAME: industrypulse
+      IOT_DB_USER: industrypulse
+
+      IOT_DB_PASSWORD: ${IOT_DB_PASSWORD:?Set IOT_DB_PASSWORD in .env}
+
     volumes:
       - ./src:/app/src
       - ./spark:/app/spark
       - ./data:/app/data
+      - ./spark-runner:/app/runner
 
     working_dir: /app
 
-    command: ["tail", "-f", "/dev/null"]
+    command:
+      - python
+      - -u
+      - /app/runner/server.py
 
     ports:
       - "4040:4040"
+
+    expose:
+      - "8090"
 
     restart: unless-stopped
 
 
   # ==========================================================
-  # Grafana - Real-Time Monitoring
+  # GRAFANA
   # ==========================================================
+
   grafana:
     image: grafana/grafana:latest
     container_name: industrypulse-grafana
@@ -159,7 +239,8 @@ services:
 
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: industrypulse123
+
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
 
     volumes:
       - grafana_data:/var/lib/grafana
@@ -168,22 +249,28 @@ services:
 
 
   # ==========================================================
-  # PostgreSQL - Airflow Metadata Database
+  # AIRFLOW - POSTGRESQL METADATA DATABASE
   # ==========================================================
+
   airflow-db:
     image: postgres:16
     container_name: industrypulse-airflow-db
 
     environment:
       POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow123
+
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:?Set AIRFLOW_DB_PASSWORD in .env}
+
       POSTGRES_DB: airflow
 
     volumes:
       - airflow_postgres_data:/var/lib/postgresql/data
 
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      test:
+        - CMD-SHELL
+        - pg_isready -U airflow -d airflow
+
       interval: 10s
       timeout: 5s
       retries: 5
@@ -192,57 +279,41 @@ services:
 
 
   # ==========================================================
-  # Airflow Common Configuration
+  # AIRFLOW - INITIALISATION
   # ==========================================================
+
   airflow-init:
-    image: apache/airflow:3.1.0
+    <<: *airflow-common
+
     container_name: industrypulse-airflow-init
 
     depends_on:
       airflow-db:
         condition: service_healthy
 
-    environment: &airflow_environment
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow123@airflow-db:5432/airflow
-
-      AIRFLOW__CORE__FERNET_KEY: ""
-
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-
-      AIRFLOW__API_AUTH__JWT_SECRET: "industrypulse-local-dev-jwt-secret-change-before-deployment"
-
-      AIRFLOW__API__BASE_URL: http://localhost:8080
-
-    volumes: &airflow_volumes
-      - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
-
-    command: >
-      bash -c "airflow db migrate"
+    command:
+      - bash
+      - -c
+      - airflow db migrate
 
     restart: "no"
 
 
   # ==========================================================
-  # Airflow API Server - Web Interface
+  # AIRFLOW - API SERVER
   # ==========================================================
+
   airflow-apiserver:
-    image: apache/airflow:3.1.0
+    <<: *airflow-common
+
     container_name: industrypulse-airflow-apiserver
 
     depends_on:
       airflow-db:
         condition: service_healthy
+
       airflow-init:
         condition: service_completed_successfully
-
-    environment:
-      <<: *airflow_environment
-
-    volumes: *airflow_volumes
 
     command: api-server
 
@@ -253,26 +324,26 @@ services:
 
 
   # ==========================================================
-  # Airflow Scheduler + LocalExecutor
+  # AIRFLOW - SCHEDULER
   # ==========================================================
+
   airflow-scheduler:
-    image: apache/airflow:3.1.0
+    <<: *airflow-common
+
     container_name: industrypulse-airflow-scheduler
 
     depends_on:
       airflow-db:
         condition: service_healthy
+
       airflow-init:
         condition: service_completed_successfully
+
       airflow-apiserver:
         condition: service_started
 
-    environment:
-      <<: *airflow_environment
-
-      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
-
-    volumes: *airflow_volumes
+      spark:
+        condition: service_started
 
     command: scheduler
 
@@ -280,22 +351,20 @@ services:
 
 
   # ==========================================================
-  # Airflow DAG Processor
+  # AIRFLOW - DAG PROCESSOR
   # ==========================================================
+
   airflow-dag-processor:
-    image: apache/airflow:3.1.0
+    <<: *airflow-common
+
     container_name: industrypulse-airflow-dag-processor
 
     depends_on:
       airflow-db:
         condition: service_healthy
+
       airflow-init:
         condition: service_completed_successfully
-
-    environment:
-      <<: *airflow_environment
-
-    volumes: *airflow_volumes
 
     command: dag-processor
 
@@ -303,8 +372,9 @@ services:
 
 
 # ============================================================
-# VOLUMES
+# VOLUMES PERSISTANTS
 # ============================================================
+
 volumes:
   kafka_data:
   minio_data:

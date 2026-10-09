@@ -1,0 +1,84 @@
+
+# ==========================================
+# SECRETS ET IDENTIFIANTS
+# ==========================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+*passwords.json.generated
+
+# ==========================================
+# PYTHON
+# ==========================================
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# ==========================================
+# AIRFLOW
+# ==========================================
+airflow/logs/
+airflow/plugins/__pycache__/
+airflow/airflow.db
+airflow/airflow.cfg
+airflow/simple_auth_manager_passwords.json.generated
+airflow/standalone_admin_password.txt
+
+# ==========================================
+# DONNEES ET FICHIERS GENERES
+# ==========================================
+data/raw/
+data/bronze/
+data/silver/
+data/gold/
+data/checkpoints/
+checkpoints/
+*.parquet
+*.avro
+*.orc
+*.db
+*.sqlite
+*.sqlite3
+
+# ==========================================
+# DOCKER / VOLUMES LOCAUX
+# ==========================================
+mosquitto/data/
+mosquitto/log/
+minio/data/
+postgres/data/
+timescaledb/data/
+grafana/data/
+kafka/data/
+
+# ==========================================
+# LOGS
+# ==========================================
+*.log
+logs/
+tmp/
+temp/
+
+# ==========================================
+# IDE / OS
+# ==========================================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# NOTEBOOKS
+# ==========================================
+.ipynb_checkpoints/
