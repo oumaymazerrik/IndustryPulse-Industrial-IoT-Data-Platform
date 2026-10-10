@@ -1,3 +1,5 @@
+import os
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col,
@@ -20,20 +22,25 @@ spark = (
     )
 
     .config(
-        "spark.sql.catalog.industrypulse",
+        "spark.sql.catalog.lakehouse",
         "org.apache.iceberg.spark.SparkCatalog"
     )
 
     .config(
-        "spark.sql.catalog.industrypulse.type",
+        "spark.sql.catalog.lakehouse.type",
         "hadoop"
     )
 
     .config(
-        "spark.sql.catalog.industrypulse.warehouse",
+        "spark.sql.catalog.lakehouse.warehouse",
         "s3a://industrypulse/warehouse"
     )
 
+    .config("spark.hadoop.fs.s3a.endpoint", os.getenv("MINIO_ENDPOINT", "http://minio:9000"))
+    .config("spark.hadoop.fs.s3a.access.key", os.environ["MINIO_ROOT_USER"])
+    .config("spark.hadoop.fs.s3a.secret.key", os.environ["MINIO_ROOT_PASSWORD"])
+    .config("spark.hadoop.fs.s3a.path.style.access", "true")
+    .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
     .getOrCreate()
 )
 
@@ -48,17 +55,17 @@ hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
 
 hadoop_conf.set(
     "fs.s3a.endpoint",
-    "http://minio:9000"
+    os.getenv("MINIO_ENDPOINT", "http://minio:9000")
 )
 
 hadoop_conf.set(
     "fs.s3a.access.key",
-    "admin"
+    os.environ["MINIO_ROOT_USER"]
 )
 
 hadoop_conf.set(
     "fs.s3a.secret.key",
-    "industrypulse123"
+    os.environ["MINIO_ROOT_PASSWORD"]
 )
 
 hadoop_conf.set(
@@ -82,7 +89,7 @@ hadoop_conf.set(
 # ============================================================
 
 spark.sql("""
-CREATE NAMESPACE IF NOT EXISTS industrypulse.silver
+CREATE NAMESPACE IF NOT EXISTS lakehouse.silver
 """)
 
 
@@ -92,7 +99,7 @@ CREATE NAMESPACE IF NOT EXISTS industrypulse.silver
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS
-industrypulse.silver.machine_sensors_clean
+lakehouse.silver.machine_sensors_clean
 (
     machine_id STRING,
 
@@ -136,7 +143,7 @@ bronze_df = (
     spark.readStream
     .format("iceberg")
     .load(
-        "industrypulse.bronze.machine_sensors_raw"
+        "lakehouse.bronze.machine_sensors_raw"
     )
 )
 
@@ -358,7 +365,7 @@ query = (
     )
 
     .toTable(
-        "industrypulse.silver.machine_sensors_clean"
+        "lakehouse.silver.machine_sensors_clean"
     )
 )
 
