@@ -1,0 +1,12 @@
+industrypulse_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: timescaledb
+      port: 5432
+      user: industrypulse
+      password: "{{ env_var('DBT_POSTGRES_PASSWORD') }}"
+      dbname: industrypulse
+      schema: analytics
+      threads: 2

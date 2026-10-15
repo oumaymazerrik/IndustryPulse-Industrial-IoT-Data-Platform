@@ -1,0 +1,27 @@
+version: 2
+
+models:
+  - name: mart_machine_performance
+    description: "KPI analytiques par machine industrielle"
+
+    columns:
+      - name: machine_id
+        description: "Identifiant unique de la machine"
+        data_tests:
+          - not_null
+          - unique
+
+      - name: total_measurements
+        description: "Nombre total de mesures"
+        data_tests:
+          - not_null
+
+      - name: avg_temperature
+        description: "Température moyenne"
+        data_tests:
+          - not_null
+
+      - name: total_alerts
+        description: "Nombre total d'alertes"
+        data_tests:
+          - not_null

@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: industrypulse
+    description: "Données industrielles stockées dans TimescaleDB"
+    schema: public
+
+    tables:
+      - name: machine_kpi
+        description: "KPI industriels calculés par Spark Structured Streaming"
