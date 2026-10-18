@@ -1,0 +1,15 @@
+artifact_uri: file:///app/mlruns/366481539090476830/c3bbd35cfe0d4f11a446c2aef5d83111/artifacts
+end_time: 1792328074403
+entry_point_name: ''
+experiment_id: '366481539090476830'
+lifecycle_stage: active
+run_id: c3bbd35cfe0d4f11a446c2aef5d83111
+run_name: RandomForest-SMOTE-Comparison
+run_uuid: c3bbd35cfe0d4f11a446c2aef5d83111
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1792328066116
+status: 3
+tags: []
+user_id: root

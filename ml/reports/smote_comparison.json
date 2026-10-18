@@ -1,0 +1,18 @@
+[
+    {
+        "model": "RandomForest-Baseline",
+        "threshold": 0.3,
+        "accuracy": 0.976,
+        "precision": 0.6351351351351351,
+        "recall": 0.6911764705882353,
+        "f1_score": 0.6619718309859155
+    },
+    {
+        "model": "RandomForest-SMOTE",
+        "threshold": 0.5,
+        "accuracy": 0.9625,
+        "precision": 0.46956521739130436,
+        "recall": 0.7941176470588235,
+        "f1_score": 0.5901639344262295
+    }
+]

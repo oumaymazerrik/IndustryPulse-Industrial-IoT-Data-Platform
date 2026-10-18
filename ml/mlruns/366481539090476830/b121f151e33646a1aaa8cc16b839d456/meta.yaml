@@ -1,0 +1,15 @@
+artifact_uri: file:///app/mlruns/366481539090476830/b121f151e33646a1aaa8cc16b839d456/artifacts
+end_time: 1792253649912
+entry_point_name: ''
+experiment_id: '366481539090476830'
+lifecycle_stage: active
+run_id: b121f151e33646a1aaa8cc16b839d456
+run_name: RandomForest-Baseline
+run_uuid: b121f151e33646a1aaa8cc16b839d456
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1792253644704
+status: 3
+tags: []
+user_id: root

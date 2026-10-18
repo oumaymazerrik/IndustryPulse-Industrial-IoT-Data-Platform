@@ -1,0 +1,15 @@
+artifact_uri: file:///app/mlruns/366481539090476830/bf9125b7657341beaa5c9d6921ef7e07/artifacts
+end_time: 1792325883107
+entry_point_name: ''
+experiment_id: '366481539090476830'
+lifecycle_stage: active
+run_id: bf9125b7657341beaa5c9d6921ef7e07
+run_name: RandomForest-Baseline-Comparison
+run_uuid: bf9125b7657341beaa5c9d6921ef7e07
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1792325877308
+status: 3
+tags: []
+user_id: root

@@ -1,0 +1,54 @@
+[
+    {
+        "model": "RandomForest-Baseline",
+        "threshold": 0.3,
+        "accuracy": 0.976,
+        "precision": 0.6351351351351351,
+        "recall": 0.6911764705882353,
+        "f1_score": 0.6619718309859155,
+        "TN": 1905,
+        "FP": 27,
+        "FN": 21,
+        "TP": 47,
+        "validation_f1": 0.6394557823129252
+    },
+    {
+        "model": "RandomForest-SMOTE",
+        "threshold": 0.65,
+        "accuracy": 0.974,
+        "precision": 0.6052631578947368,
+        "recall": 0.6764705882352942,
+        "f1_score": 0.6388888888888888,
+        "TN": 1902,
+        "FP": 30,
+        "FN": 22,
+        "TP": 46,
+        "validation_f1": 0.5733333333333334
+    },
+    {
+        "model": "XGBoost",
+        "threshold": 0.85,
+        "accuracy": 0.983,
+        "precision": 0.7833333333333333,
+        "recall": 0.6911764705882353,
+        "f1_score": 0.734375,
+        "TN": 1919,
+        "FP": 13,
+        "FN": 21,
+        "TP": 47,
+        "validation_f1": 0.6451612903225806
+    },
+    {
+        "model": "CatBoost",
+        "threshold": 0.8,
+        "accuracy": 0.9785,
+        "precision": 0.6712328767123288,
+        "recall": 0.7205882352941176,
+        "f1_score": 0.6950354609929078,
+        "TN": 1908,
+        "FP": 24,
+        "FN": 19,
+        "TP": 49,
+        "validation_f1": 0.6412213740458015
+    }
+]

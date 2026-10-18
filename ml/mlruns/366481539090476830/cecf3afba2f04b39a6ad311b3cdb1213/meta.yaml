@@ -1,0 +1,15 @@
+artifact_uri: file:///app/mlruns/366481539090476830/cecf3afba2f04b39a6ad311b3cdb1213/artifacts
+end_time: 1792329405086
+entry_point_name: ''
+experiment_id: '366481539090476830'
+lifecycle_stage: active
+run_id: cecf3afba2f04b39a6ad311b3cdb1213
+run_name: CatBoost-Comparison
+run_uuid: cecf3afba2f04b39a6ad311b3cdb1213
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1792329397603
+status: 3
+tags: []
+user_id: root
