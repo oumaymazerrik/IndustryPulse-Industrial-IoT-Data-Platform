@@ -16,7 +16,6 @@ MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_TOPIC = os.getenv("MQTT_TOPIC", "industrypulse/machines")
 
-# Intervalle entre deux cycles de génération
 GENERATION_INTERVAL = float(
     os.getenv("GENERATION_INTERVAL", "5")
 )
@@ -34,6 +33,12 @@ MACHINES = [
     "M005",
 ]
 
+# Usure propre a chaque machine
+machine_tool_wear = {
+    machine: random.randint(0, 100)
+    for machine in MACHINES
+}
+
 
 # ============================================================
 # GENERATION DES DONNEES
@@ -41,11 +46,45 @@ MACHINES = [
 
 def generate_sensor_data(machine_id):
 
+    # Capteurs IoT existants
     temperature = round(random.uniform(55, 90), 2)
     vibration = round(random.uniform(0.1, 1.2), 3)
     pressure = round(random.uniform(4.0, 7.0), 2)
     energy = round(random.uniform(20, 80), 2)
 
+    # Variables synthetiques compatibles avec AI4I
+    # Temperatures en Kelvin
+    air_temperature = round(random.uniform(295, 305), 2)
+
+    process_temperature = round(
+        air_temperature + random.uniform(8, 12), 2
+    )
+
+    # Vitesse en RPM
+    rotational_speed = random.randint(1200, 2200)
+
+    # Couple moteur en Nm
+    torque = round(
+        max(
+            5.0,
+            min(
+                80.0,
+                45 - 0.035 * (rotational_speed - 1500)
+                + random.uniform(-8, 8)
+            )
+        ),
+        2
+    )
+
+    # Usure en minutes
+    tool_wear = machine_tool_wear[machine_id]
+
+    machine_tool_wear[machine_id] += random.choice([0, 1, 2])
+
+    if machine_tool_wear[machine_id] > 250:
+        machine_tool_wear[machine_id] = 0
+
+    # Alertes IoT existantes
     if temperature > 85 or vibration > 1.0:
         status = "WARNING"
     else:
@@ -57,6 +96,14 @@ def generate_sensor_data(machine_id):
         "vibration": vibration,
         "pressure": pressure,
         "energy": energy,
+
+        # Variables pour XGBoost
+        "air_temperature": air_temperature,
+        "process_temperature": process_temperature,
+        "rotational_speed": rotational_speed,
+        "torque": torque,
+        "tool_wear": tool_wear,
+
         "status": status,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
@@ -75,7 +122,7 @@ def on_connect(client, userdata, flags, reason_code, properties):
     mqtt_connected = reason_code == 0
 
     if mqtt_connected:
-        print("[OK] Connexion MQTT réussie", flush=True)
+        print("[OK] Connexion MQTT reussie", flush=True)
     else:
         print(
             f"[ERROR] Connexion MQTT : {reason_code}",
@@ -83,14 +130,19 @@ def on_connect(client, userdata, flags, reason_code, properties):
         )
 
 
-def on_disconnect(client, userdata, disconnect_flags,
-                  reason_code, properties):
+def on_disconnect(
+    client,
+    userdata,
+    disconnect_flags,
+    reason_code,
+    properties
+):
     global mqtt_connected
 
     mqtt_connected = False
 
     print(
-        f"[WARNING] MQTT déconnecté : {reason_code}",
+        f"[WARNING] MQTT deconnecte : {reason_code}",
         flush=True,
     )
 
@@ -115,7 +167,7 @@ def main():
     )
 
     print("========================================")
-    print(" IndustryPulse - IoT Generator")
+    print(" IndustryPulse - IoT Generator + ML")
     print("========================================")
     print(f"MQTT Broker : {MQTT_BROKER}:{MQTT_PORT}")
     print(f"Topic       : {MQTT_TOPIC}")
@@ -159,7 +211,7 @@ def main():
 
                     if not result.is_published():
                         raise RuntimeError(
-                            "Publication MQTT non confirmée"
+                            "Publication MQTT non confirmee"
                         )
 
                     print(
@@ -168,6 +220,11 @@ def main():
                         f"Vibration={data['vibration']} | "
                         f"Pressure={data['pressure']} | "
                         f"Energy={data['energy']} | "
+                        f"AirTemp={data['air_temperature']} K | "
+                        f"ProcessTemp={data['process_temperature']} K | "
+                        f"RPM={data['rotational_speed']} | "
+                        f"Torque={data['torque']} Nm | "
+                        f"Wear={data['tool_wear']} min | "
                         f"Status={data['status']}",
                         flush=True,
                     )
@@ -183,13 +240,13 @@ def main():
             time.sleep(GENERATION_INTERVAL)
 
     except KeyboardInterrupt:
-        print("\nArrêt du générateur IoT...")
+        print("\nArret du generateur IoT...")
 
     finally:
         client.disconnect()
         client.loop_stop()
 
-        print("Connexion MQTT fermée.")
+        print("Connexion MQTT fermee.")
 
 
 if __name__ == "__main__":

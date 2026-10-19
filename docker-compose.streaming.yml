@@ -1,4 +1,4 @@
-# Lancer avec : docker compose -f docker-compose.yml -f docker-compose.streaming.yml up -d --build
+﻿# Lancer avec : docker compose -f docker-compose.yml -f docker-compose.streaming.yml up -d --build
 x-iot-common: &iot-common
   build:
     context: .
@@ -101,3 +101,4 @@ services:
       - /app/spark/spark_gold_streaming.py
     depends_on:
       - spark-silver-stream
+

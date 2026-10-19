@@ -1,10 +1,13 @@
+
 import os
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col,
     when,
-    current_timestamp
+    current_timestamp,
+    lit,
+    isnan
 )
 
 
@@ -36,11 +39,24 @@ spark = (
         "s3a://industrypulse/warehouse"
     )
 
-    .config("spark.hadoop.fs.s3a.endpoint", os.getenv("MINIO_ENDPOINT", "http://minio:9000"))
-    .config("spark.hadoop.fs.s3a.access.key", os.environ["MINIO_ROOT_USER"])
-    .config("spark.hadoop.fs.s3a.secret.key", os.environ["MINIO_ROOT_PASSWORD"])
+    .config(
+        "spark.hadoop.fs.s3a.endpoint",
+        os.getenv("MINIO_ENDPOINT", "http://minio:9000")
+    )
+
+    .config(
+        "spark.hadoop.fs.s3a.access.key",
+        os.environ["MINIO_ROOT_USER"]
+    )
+
+    .config(
+        "spark.hadoop.fs.s3a.secret.key",
+        os.environ["MINIO_ROOT_PASSWORD"]
+    )
+
     .config("spark.hadoop.fs.s3a.path.style.access", "true")
     .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
+
     .getOrCreate()
 )
 
@@ -68,20 +84,9 @@ hadoop_conf.set(
     os.environ["MINIO_ROOT_PASSWORD"]
 )
 
-hadoop_conf.set(
-    "fs.s3a.path.style.access",
-    "true"
-)
-
-hadoop_conf.set(
-    "fs.s3a.connection.ssl.enabled",
-    "false"
-)
-
-hadoop_conf.set(
-    "fs.s3a.impl",
-    "org.apache.hadoop.fs.s3a.S3AFileSystem"
-)
+hadoop_conf.set("fs.s3a.path.style.access", "true")
+hadoop_conf.set("fs.s3a.connection.ssl.enabled", "false")
+hadoop_conf.set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
 
 
 # ============================================================
@@ -108,6 +113,12 @@ lakehouse.silver.machine_sensors_clean
     pressure DOUBLE,
     energy DOUBLE,
 
+    air_temperature DOUBLE,
+    process_temperature DOUBLE,
+    rotational_speed DOUBLE,
+    torque DOUBLE,
+    tool_wear DOUBLE,
+
     status STRING,
 
     event_timestamp TIMESTAMP,
@@ -123,6 +134,7 @@ lakehouse.silver.machine_sensors_clean
     sensor_alert BOOLEAN,
 
     data_quality_status STRING,
+    ml_data_quality_status STRING,
 
     processing_timestamp TIMESTAMP
 )
@@ -130,23 +142,49 @@ USING iceberg
 """)
 
 
-print("\n========================================")
-print(" SILVER ICEBERG TABLE READY")
-print("========================================")
+# ============================================================
+# 5. EVOLVE EXISTING SILVER TABLE
+# ============================================================
+
+table_name = "lakehouse.silver.machine_sensors_clean"
+
+existing_columns = {
+    field.name
+    for field in spark.table(table_name).schema.fields
+}
+
+new_columns = {
+    "air_temperature": "DOUBLE",
+    "process_temperature": "DOUBLE",
+    "rotational_speed": "DOUBLE",
+    "torque": "DOUBLE",
+    "tool_wear": "DOUBLE",
+    "ml_data_quality_status": "STRING"
+}
+
+for column_name, column_type in new_columns.items():
+
+    if column_name not in existing_columns:
+
+        spark.sql(
+            f"ALTER TABLE {table_name} "
+            f"ADD COLUMN {column_name} {column_type}"
+        )
+
+        print(f"[OK] Colonne ajoutee : {column_name}")
+
+print("[OK] Table Iceberg Silver prete")
 
 
 # ============================================================
-# 5. READ BRONZE AS STREAM
+# 6. READ BRONZE AS STREAM
 # ============================================================
 
 bronze_df = (
     spark.readStream
     .format("iceberg")
-    .load(
-        "lakehouse.bronze.machine_sensors_raw"
-    )
+    .load("lakehouse.bronze.machine_sensors_raw")
 )
-
 
 print("\n========================================")
 print(" BRONZE STREAM SCHEMA")
@@ -156,7 +194,7 @@ bronze_df.printSchema()
 
 
 # ============================================================
-# 6. DATA QUALITY
+# 7. DATA QUALITY - EXISTING IOT SENSORS
 # ============================================================
 
 validated_df = bronze_df.withColumn(
@@ -174,56 +212,42 @@ validated_df = bronze_df.withColumn(
     )
 
     .when(
-        col("temperature").isNull(),
-        "INVALID_TEMPERATURE"
-    )
-
-    .when(
-        (col("temperature") < 0)
+        col("temperature").isNull()
+        | isnan(col("temperature"))
+        | (col("temperature") < 0)
         | (col("temperature") > 150),
         "INVALID_TEMPERATURE"
     )
 
     .when(
-        col("vibration").isNull(),
-        "INVALID_VIBRATION"
-    )
-
-    .when(
-        (col("vibration") < 0)
+        col("vibration").isNull()
+        | isnan(col("vibration"))
+        | (col("vibration") < 0)
         | (col("vibration") > 5),
         "INVALID_VIBRATION"
     )
 
     .when(
-        col("pressure").isNull(),
-        "INVALID_PRESSURE"
-    )
-
-    .when(
-        (col("pressure") < 0)
+        col("pressure").isNull()
+        | isnan(col("pressure"))
+        | (col("pressure") < 0)
         | (col("pressure") > 20),
         "INVALID_PRESSURE"
     )
 
     .when(
-        col("energy").isNull(),
+        col("energy").isNull()
+        | isnan(col("energy"))
+        | (col("energy") < 0),
         "INVALID_ENERGY"
     )
 
-    .when(
-        col("energy") < 0,
-        "INVALID_ENERGY"
-    )
-
-    .otherwise(
-        "VALID"
-    )
+    .otherwise("VALID")
 )
 
 
 # ============================================================
-# 7. KEEP VALID DATA
+# 8. KEEP VALID IOT DATA
 # ============================================================
 
 clean_df = validated_df.filter(
@@ -232,59 +256,84 @@ clean_df = validated_df.filter(
 
 
 # ============================================================
-# 8. ADD ALERT FEATURES
+# 9. ML DATA QUALITY
+# ============================================================
+
+ml_features = [
+    "air_temperature",
+    "process_temperature",
+    "rotational_speed",
+    "torque",
+    "tool_wear"
+]
+
+missing_ml_feature = lit(False)
+
+for feature in ml_features:
+    missing_ml_feature = (
+        missing_ml_feature
+        | col(feature).isNull()
+        | isnan(col(feature))
+    )
+
+ml_valid_range = (
+    col("air_temperature").between(290, 315)
+    & col("process_temperature").between(290, 330)
+    & col("rotational_speed").between(1000, 3000)
+    & col("torque").between(0, 100)
+    & col("tool_wear").between(0, 300)
+)
+
+clean_df = clean_df.withColumn(
+
+    "ml_data_quality_status",
+
+    when(
+        missing_ml_feature,
+        "MISSING_ML_FEATURES"
+    )
+
+    .when(
+        ~ml_valid_range,
+        "INVALID_ML_FEATURES"
+    )
+
+    .otherwise("READY")
+)
+
+
+# ============================================================
+# 10. ADD ALERT FEATURES
 # ============================================================
 
 silver_df = (
 
     clean_df
 
-    # --------------------------------------------------------
-    # Temperature alert
-    # --------------------------------------------------------
-
     .withColumn(
         "temperature_alert",
-
         when(
             col("temperature") > 85,
             True
         ).otherwise(False)
     )
 
-
-    # --------------------------------------------------------
-    # Vibration alert
-    # --------------------------------------------------------
-
     .withColumn(
         "vibration_alert",
-
         when(
             col("vibration") > 1.0,
             True
         ).otherwise(False)
     )
 
-
-    # --------------------------------------------------------
-    # Global sensor alert
-    # --------------------------------------------------------
-
     .withColumn(
         "sensor_alert",
-
         when(
             (col("temperature") > 85)
             | (col("vibration") > 1.0),
             True
         ).otherwise(False)
     )
-
-
-    # --------------------------------------------------------
-    # Processing timestamp
-    # --------------------------------------------------------
 
     .withColumn(
         "processing_timestamp",
@@ -294,7 +343,7 @@ silver_df = (
 
 
 # ============================================================
-# 9. SELECT FINAL SILVER SCHEMA
+# 11. SELECT FINAL SILVER SCHEMA
 # ============================================================
 
 silver_df = silver_df.select(
@@ -305,6 +354,12 @@ silver_df = silver_df.select(
     "vibration",
     "pressure",
     "energy",
+
+    "air_temperature",
+    "process_temperature",
+    "rotational_speed",
+    "torque",
+    "tool_wear",
 
     "status",
 
@@ -321,6 +376,7 @@ silver_df = silver_df.select(
     "sensor_alert",
 
     "data_quality_status",
+    "ml_data_quality_status",
 
     "processing_timestamp"
 )
@@ -334,7 +390,7 @@ silver_df.printSchema()
 
 
 # ============================================================
-# 10. CHECKPOINT
+# 12. CHECKPOINT
 # ============================================================
 
 checkpoint_path = (
@@ -344,15 +400,12 @@ checkpoint_path = (
 
 
 # ============================================================
-# 11. WRITE SILVER STREAM
+# 13. WRITE SILVER STREAM
 # ============================================================
 
 query = (
-
     silver_df.writeStream
-
     .format("iceberg")
-
     .outputMode("append")
 
     .option(
@@ -364,9 +417,7 @@ query = (
         processingTime="10 seconds"
     )
 
-    .toTable(
-        "lakehouse.silver.machine_sensors_clean"
-    )
+    .toTable(table_name)
 )
 
 
@@ -374,6 +425,5 @@ print("\n========================================")
 print(" SILVER STREAMING STARTED")
 print(" Bronze -> Spark -> Silver")
 print("========================================\n")
-
 
 query.awaitTermination()
