@@ -1,0 +1,27 @@
+services:
+  ml-worker:
+    build:
+      context: .
+      dockerfile: ml/inference_worker/Dockerfile
+    image: industrypulse-ml-worker:local
+    container_name: industrypulse-ml-worker
+    restart: unless-stopped
+
+    environment:
+      KAFKA_BROKER: kafka:29092
+      KAFKA_TOPIC: machine-sensors
+      ML_API_URL: http://industrypulse-ml-api:8000/predict
+
+      DB_HOST: timescaledb
+      DB_PORT: "5432"
+      DB_NAME: industrypulse
+      DB_USER: industrypulse
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+
+    networks:
+      - industrypulse
+
+networks:
+  industrypulse:
+    external: true
+    name: industrypulse_default

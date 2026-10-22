@@ -102,6 +102,8 @@ CREATE NAMESPACE IF NOT EXISTS lakehouse.silver
 # 4. CREATE SILVER ICEBERG TABLE
 # ============================================================
 
+table_name = "lakehouse.silver.machine_sensors_clean"
+
 spark.sql("""
 CREATE TABLE IF NOT EXISTS
 lakehouse.silver.machine_sensors_clean
@@ -146,8 +148,6 @@ USING iceberg
 # 5. EVOLVE EXISTING SILVER TABLE
 # ============================================================
 
-table_name = "lakehouse.silver.machine_sensors_clean"
-
 existing_columns = {
     field.name
     for field in spark.table(table_name).schema.fields
@@ -171,9 +171,12 @@ for column_name, column_type in new_columns.items():
             f"ADD COLUMN {column_name} {column_type}"
         )
 
-        print(f"[OK] Colonne ajoutee : {column_name}")
+        print(
+            f"[OK] Colonne ajoutee : {column_name}",
+            flush=True
+        )
 
-print("[OK] Table Iceberg Silver prete")
+print("[OK] Table Iceberg Silver prete", flush=True)
 
 
 # ============================================================
@@ -270,6 +273,7 @@ ml_features = [
 missing_ml_feature = lit(False)
 
 for feature in ml_features:
+
     missing_ml_feature = (
         missing_ml_feature
         | col(feature).isNull()
@@ -343,44 +347,32 @@ silver_df = (
 
 
 # ============================================================
-# 11. SELECT FINAL SILVER SCHEMA
+# 11. ALIGN DATAFRAME WITH ICEBERG TABLE SCHEMA
 # ============================================================
 
+# Iceberg ajoute les nouvelles colonnes a la fin des tables
+# existantes. Il faut respecter l'ordre reel de la table.
+
+table_schema = spark.table(table_name).schema
+
 silver_df = silver_df.select(
-
-    "machine_id",
-
-    "temperature",
-    "vibration",
-    "pressure",
-    "energy",
-
-    "air_temperature",
-    "process_temperature",
-    "rotational_speed",
-    "torque",
-    "tool_wear",
-
-    "status",
-
-    "event_timestamp",
-
-    "kafka_partition",
-    "kafka_offset",
-    "kafka_timestamp",
-
-    "ingestion_timestamp",
-
-    "temperature_alert",
-    "vibration_alert",
-    "sensor_alert",
-
-    "data_quality_status",
-    "ml_data_quality_status",
-
-    "processing_timestamp"
+    *[
+        col(field.name)
+        .cast(field.dataType)
+        .alias(field.name)
+        for field in table_schema.fields
+    ]
 )
 
+print(
+    "[OK] Ordre des colonnes Silver aligne avec Iceberg",
+    flush=True
+)
+
+
+# ============================================================
+# 12. PRINT FINAL SILVER SCHEMA
+# ============================================================
 
 print("\n========================================")
 print(" SILVER STREAM SCHEMA")
@@ -390,7 +382,7 @@ silver_df.printSchema()
 
 
 # ============================================================
-# 12. CHECKPOINT
+# 13. CHECKPOINT
 # ============================================================
 
 checkpoint_path = (
@@ -400,7 +392,7 @@ checkpoint_path = (
 
 
 # ============================================================
-# 13. WRITE SILVER STREAM
+# 14. WRITE SILVER STREAM
 # ============================================================
 
 query = (

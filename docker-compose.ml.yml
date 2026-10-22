@@ -1,0 +1,23 @@
+
+services:
+  ml-api:
+    image: industrypulse-ml
+    container_name: industrypulse-ml-api
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - ./ml/src:/app/src:ro
+      - ./ml/models:/app/models:ro
+
+    entrypoint: ["uvicorn"]
+
+    command:
+      - "src.api:app"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+
+    restart: unless-stopped

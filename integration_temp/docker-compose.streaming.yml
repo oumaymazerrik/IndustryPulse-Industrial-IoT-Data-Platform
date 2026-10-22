@@ -1,0 +1,103 @@
+# Lancer avec : docker compose -f docker-compose.yml -f docker-compose.streaming.yml up -d --build
+x-iot-common: &iot-common
+  build:
+    context: .
+    dockerfile: src/Dockerfile
+  image: industrypulse-iot:local
+  restart: unless-stopped
+  environment:
+    MQTT_BROKER: mosquitto
+    MQTT_PORT: "1883"
+    MQTT_TOPIC: industrypulse/machines
+
+x-stream-common: &stream-common
+  image: industrypulse-spark:local
+  build:
+    context: .
+    dockerfile: spark-runner/Dockerfile
+  restart: unless-stopped
+  working_dir: /app
+  environment:
+    MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER}
+    MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD}
+    MINIO_ENDPOINT: http://minio:9000
+  volumes:
+    - ./spark:/app/spark:ro
+  depends_on:
+    - kafka
+    - minio
+
+services:
+  mqtt-kafka-bridge:
+    <<: *iot-common
+    container_name: industrypulse-mqtt-kafka-bridge
+    command: ["python", "-u", "/app/src/mqtt_to_kafka.py"]
+    environment:
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_TOPIC: industrypulse/machines
+      KAFKA_BROKER: kafka:29092
+      KAFKA_TOPIC: machine-sensors
+    depends_on:
+      - mosquitto
+      - kafka
+
+  iot-generator:
+    <<: *iot-common
+    container_name: industrypulse-iot-generator
+    command: ["python", "-u", "/app/src/iot_generator.py"]
+    environment:
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_TOPIC: industrypulse/machines
+      GENERATION_INTERVAL: "5"
+    depends_on:
+      - mosquitto
+      - mqtt-kafka-bridge
+
+  spark-bronze-stream:
+    <<: *stream-common
+    container_name: industrypulse-spark-bronze
+    command:
+      - spark-submit
+      - --master
+      - local[2]
+      - --driver-memory
+      - 2g
+      - --packages
+      - org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.10.0,org.apache.hadoop:hadoop-aws:3.3.4
+      - /app/spark/spark_streaming_iceberg.py
+    depends_on:
+      - kafka
+      - minio
+      - mqtt-kafka-bridge
+
+  spark-silver-stream:
+    <<: *stream-common
+    container_name: industrypulse-spark-silver
+    command:
+      - spark-submit
+      - --master
+      - local[2]
+      - --driver-memory
+      - 2g
+      - --packages
+      - org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.10.0,org.apache.hadoop:hadoop-aws:3.3.4
+      - /app/spark/spark_silver_streaming.py
+    depends_on:
+      - spark-bronze-stream
+
+  spark-gold-stream:
+    <<: *stream-common
+    container_name: industrypulse-spark-gold
+    command:
+      - spark-submit
+      - --master
+      - local[2]
+      - --driver-memory
+      - 2g
+      - --packages
+      - org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.10.0,org.apache.hadoop:hadoop-aws:3.3.4
+      - /app/spark/spark_gold_streaming.py
+    depends_on:
+      - spark-silver-stream
