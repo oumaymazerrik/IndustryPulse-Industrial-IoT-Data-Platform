@@ -1,0 +1,27 @@
+{
+  "reference_rows": 10000,
+  "current_rows": 1000,
+  "method": "PSI",
+  "features": {
+    "air_temperature": {
+      "psi": 0.5189,
+      "status": "HIGH_DRIFT"
+    },
+    "process_temperature": {
+      "psi": 0.8214,
+      "status": "HIGH_DRIFT"
+    },
+    "rotational_speed": {
+      "psi": 1.0089,
+      "status": "HIGH_DRIFT"
+    },
+    "torque": {
+      "psi": 0.111,
+      "status": "MODERATE_DRIFT"
+    },
+    "tool_wear": {
+      "psi": 0.263,
+      "status": "HIGH_DRIFT"
+    }
+  }
+}
