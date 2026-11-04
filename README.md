@@ -12,7 +12,7 @@ I built IndustryPulse to understand how different tools work together in one dat
 ## 🖥️ Industrial Intelligence Dashboard
 
 <p align="center">
-  <img src="IndustryPulse Industrial IoT Monitoring & Predictive Maintenance Dashboard.png"
+  <img src="assets/IndustryPulse  Industrial IoT Monitoring & Predictive Maintenance Dashboard.png"
        alt="IndustryPulse Industrial Intelligence Dashboard"
        width="100%">
 </p>
