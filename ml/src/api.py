@@ -4,9 +4,12 @@ import time
 import joblib
 import pandas as pd
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Response, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from pydantic import BaseModel, Field
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+
 
 # ==========================================
 # 1. CONFIGURATION
@@ -20,8 +23,9 @@ MODEL_PATH = os.getenv(
 app = FastAPI(
     title="IndustryPulse Predictive Maintenance API",
     description="Machine failure prediction using XGBoost",
-    version="1.1.0"
+    version="1.2.0"
 )
+
 
 # ==========================================
 # 2. PROMETHEUS METRICS
@@ -35,7 +39,12 @@ PREDICTIONS_TOTAL = Counter(
 
 PREDICTION_ERRORS = Counter(
     "industrypulse_prediction_errors_total",
-    "Total number of prediction errors"
+    "Total number of prediction processing errors"
+)
+
+VALIDATION_ERRORS = Counter(
+    "industrypulse_validation_errors_total",
+    "Total number of HTTP 422 validation errors"
 )
 
 PREDICTION_DURATION = Histogram(
@@ -43,8 +52,26 @@ PREDICTION_DURATION = Histogram(
     "Prediction processing duration in seconds"
 )
 
+
 # ==========================================
-# 3. LOAD TRAINED MODEL
+# 3. VALIDATION ERROR HANDLER
+# ==========================================
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(
+    request: Request,
+    exc: RequestValidationError
+):
+    if request.url.path == "/predict":
+        VALIDATION_ERRORS.inc()
+
+    return await request_validation_exception_handler(
+        request, exc
+    )
+
+
+# ==========================================
+# 4. LOAD TRAINED MODEL
 # ==========================================
 
 model = None
@@ -58,8 +85,9 @@ if os.path.exists(MODEL_PATH):
     threshold = saved["threshold"]
     features = saved["features"]
 
+
 # ==========================================
-# 4. INPUT DATA SCHEMA
+# 5. INPUT DATA SCHEMA
 # ==========================================
 
 class MachineData(BaseModel):
@@ -79,8 +107,9 @@ class MachineData(BaseModel):
         ..., description="Tool wear in minutes"
     )
 
+
 # ==========================================
-# 5. HEALTH ENDPOINT
+# 6. HEALTH ENDPOINT
 # ==========================================
 
 @app.get("/health")
@@ -92,8 +121,9 @@ def health():
         "threshold": threshold
     }
 
+
 # ==========================================
-# 6. METRICS ENDPOINT
+# 7. METRICS ENDPOINT
 # ==========================================
 
 @app.get("/metrics")
@@ -103,8 +133,9 @@ def metrics():
         media_type=CONTENT_TYPE_LATEST
     )
 
+
 # ==========================================
-# 7. PREDICTION ENDPOINT
+# 8. PREDICTION ENDPOINT
 # ==========================================
 
 @app.post("/predict")
